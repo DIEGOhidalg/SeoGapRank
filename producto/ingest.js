@@ -1,3 +1,7 @@
+// ingest.js — Ejecución local / backfill manual
+// Uso normal:    node ingest.js
+// Backfill:      node ingest.js 2026-05-01
+
 process.env.DB_HOST = 'gaprank-db-v2.cl0ykwguiwcz.us-east-2.rds.amazonaws.com';
 process.env.DB_PORT = '5432';
 process.env.DB_NAME = 'gaprank';
@@ -5,9 +9,6 @@ process.env.DB_USER = 'gaprank_admin';
 process.env.DB_PASSWORD = 'GapRank2026!';
 process.env.GSC_PROPERTY = 'https://www.paris.cl/';
 process.env.GSC_KEY_FILE = './credentials.json';
-
-console.log('KEY FILE:', process.env.GSC_KEY_FILE);
-console.log('DB HOST:', process.env.DB_HOST);
 
 const { google } = require('googleapis');
 const { Pool } = require('pg');
@@ -29,18 +30,15 @@ async function getAuthClient() {
   return auth.getClient();
 }
 
-function getDateRange(daysBack) {
-  const end = new Date();
-  end.setDate(end.getDate() - 2);
-  const start = new Date(end);
-  start.setDate(start.getDate() - daysBack);
-  return {
-    startDate: start.toISOString().split('T')[0],
-    endDate: end.toISOString().split('T')[0]
-  };
+// Retorna fecha de ayer en formato YYYY-MM-DD
+function getYesterday() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split('T')[0];
 }
 
-async function fetchGSCData(auth, startDate, endDate, rowLimit = 25000) {
+// Descarga datos de GSC para UN día específico
+async function fetchGSCData(auth, date, rowLimit = 25000) {
   const sc = google.searchconsole({ version: 'v1', auth });
   const rows = [];
   let startRow = 0;
@@ -49,17 +47,24 @@ async function fetchGSCData(auth, startDate, endDate, rowLimit = 25000) {
     const res = await sc.searchanalytics.query({
       siteUrl: process.env.GSC_PROPERTY,
       requestBody: {
-        startDate,
-        endDate,
+        startDate: date,
+        endDate: date,
         dimensions: ['query', 'page', 'device'],
         rowLimit,
-        startRow
+        startRow,
+        dimensionFilterGroups: [{
+          filters: [{
+            dimension: 'page',
+            operator: 'contains',
+            expression: 'paris.cl/tecnologia/'
+          }]
+        }]
       }
     });
 
     const data = res.data.rows || [];
     rows.push(...data);
-    console.log(`  Fetched ${rows.length} rows so far (startRow: ${startRow})`);
+    console.log(`  Fetched ${rows.length} rows (startRow: ${startRow})`);
 
     if (data.length < rowLimit) break;
     startRow += rowLimit;
@@ -68,7 +73,7 @@ async function fetchGSCData(auth, startDate, endDate, rowLimit = 25000) {
   return rows;
 }
 
-async function saveToDatabase(rows, startDate, endDate) {
+async function saveToDatabase(rows, date) {
   let inserted = 0;
   const batchSize = 500;
 
@@ -88,10 +93,7 @@ async function saveToDatabase(rows, startDate, endDate) {
             impressions = EXCLUDED.impressions,
             ctr = EXCLUDED.ctr,
             position = EXCLUDED.position
-        `, [
-          endDate, query, page,
-          row.clicks, row.impressions, row.ctr, row.position, device
-        ]);
+        `, [date, query, page, row.clicks, row.impressions, row.ctr, row.position, device]);
         inserted++;
       }
       await client.query('COMMIT');
@@ -102,15 +104,17 @@ async function saveToDatabase(rows, startDate, endDate) {
       client.release();
     }
 
-    if (inserted % 50000 === 0) {
-      console.log(`  💾 Insertadas ${inserted} de ${rows.length} filas...`);
-    }
+    console.log(`  💾 Insertadas ${inserted} de ${rows.length} filas...`);
   }
-  console.log(`✅ Insertadas ${inserted} filas para ${startDate} → ${endDate}`);
+
+  console.log(`✅ Insertadas ${inserted} filas para ${date}`);
+  return inserted;
 }
 
 async function runIngestion() {
-  console.log('🚀 Iniciando ingesta GSC...');
+  // Acepta fecha como argumento: node ingest.js 2026-05-01
+  const date = process.argv[2] || getYesterday();
+  console.log(`🚀 Iniciando ingesta GSC — Fecha: ${date} — Filtro: /tecnologia/`);
 
   try {
     const auth = await getAuthClient();
@@ -119,19 +123,16 @@ async function runIngestion() {
     await pool.query('SELECT 1');
     console.log('✅ Conexión BD OK');
 
-    const { startDate, endDate } = getDateRange(90);
-    console.log(`📅 Período: ${startDate} → ${endDate}`);
-
-    console.log('📥 Descargando datos de GSC...');
-    const rows = await fetchGSCData(auth, startDate, endDate);
+    console.log(`📥 Descargando datos de /tecnologia/ para ${date}...`);
+    const rows = await fetchGSCData(auth, date);
     console.log(`📊 Total filas descargadas: ${rows.length}`);
 
     if (rows.length === 0) {
-      console.log('⚠️  No hay datos — verifica que la cuenta de servicio tenga acceso a GSC');
+      console.log('⚠️  Sin datos para esta fecha');
       return;
     }
 
-    await saveToDatabase(rows, startDate, endDate);
+    await saveToDatabase(rows, date);
     console.log('✅ Ingesta completada exitosamente');
 
   } catch (err) {

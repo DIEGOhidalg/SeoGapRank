@@ -6,7 +6,7 @@ process.env.DB_HOST = 'gaprank-db-v2.cl0ykwguiwcz.us-east-2.rds.amazonaws.com';
 process.env.DB_PORT = '5432';
 process.env.DB_NAME = 'gaprank';
 process.env.DB_USER = 'gaprank_admin';
-process.env.DB_PASSWORD = 'GapRank2026!';
+process.env.DB_PASSWORD = '';
 process.env.GSC_PROPERTY = 'https://www.paris.cl/';
 process.env.GSC_KEY_FILE = './credentials.json';
 

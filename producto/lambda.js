@@ -16,12 +16,11 @@ function getYesterday() {
   return d.toISOString().split('T')[0];
 }
 
-// Descarga datos de GSC para UN día específico
-// startDate = endDate = mismo día → GSC devuelve datos de ese día solamente
-async function fetchGSCDay(auth, date, rowLimit = 25000) {
+async function fetchGSCDay(auth, date) {
   const sc = google.searchconsole({ version: 'v1', auth });
   const rows = [];
   let startRow = 0;
+  const rowLimit = 25000;
 
   while (true) {
     const res = await sc.searchanalytics.query({
@@ -29,7 +28,7 @@ async function fetchGSCDay(auth, date, rowLimit = 25000) {
       requestBody: {
         startDate: date,
         endDate: date,
-        dimensions: ['query', 'page', 'device'],
+        dimensions: ['query', 'page'],
         rowLimit,
         startRow,
         dimensionFilterGroups: [{
@@ -51,10 +50,12 @@ async function fetchGSCDay(auth, date, rowLimit = 25000) {
   return rows;
 }
 
-function shouldExclude(page) {
-  return page.includes('/listas/') ||
-         page.includes('/search') ||
-         page.includes('.html');
+function shouldExclude(page, position) {
+  if (page.includes('/listas/')) return true;
+  if (page.includes('/search')) return true;
+  if (page.includes('.html')) return true;
+  if (position > 20) return true;
+  return false;
 }
 
 async function saveToDatabase(pool, rows, date) {
@@ -69,22 +70,22 @@ async function saveToDatabase(pool, rows, date) {
     try {
       await client.query('BEGIN');
       for (const row of batch) {
-        const [query, page, device] = row.keys;
+        const [query, page] = row.keys;
 
-        if (shouldExclude(page)) {
+        if (shouldExclude(page, row.position)) {
           excluded++;
           continue;
         }
 
         await client.query(`
-          INSERT INTO gsc_daily (date, query, page, clicks, impressions, ctr, position, device)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          ON CONFLICT (date, query, page, device) DO UPDATE SET
+          INSERT INTO gsc_daily (date, query, page, clicks, impressions, ctr, position)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (date, query, page) DO UPDATE SET
             clicks = EXCLUDED.clicks,
             impressions = EXCLUDED.impressions,
             ctr = EXCLUDED.ctr,
             position = EXCLUDED.position
-        `, [date, query, page, row.clicks, row.impressions, row.ctr, row.position, device]);
+        `, [date, query, page, row.clicks, row.impressions, row.ctr, row.position]);
         inserted++;
       }
       await client.query('COMMIT');
@@ -129,7 +130,6 @@ exports.handler = async (event) => {
     const authClient = await auth.getClient();
     console.log('GSC OK:', gscKey.client_email);
 
-    // Un día por ejecución — ayer, o fecha manual si se pasa en el evento
     const date = event.date || getYesterday();
     console.log(`Descargando /tecnologia/ para: ${date}`);
 

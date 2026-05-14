@@ -1,4 +1,3 @@
-// lambda.js — Función AWS Lambda GAPRANK — descarga 1 día por ejecución
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 const { google } = require('googleapis');
 const { Pool } = require('pg');
@@ -11,7 +10,6 @@ async function getSecret(secretId) {
   return JSON.parse(res.SecretString);
 }
 
-// Retorna fecha de ayer en formato YYYY-MM-DD
 function getYesterday() {
   const d = new Date();
   d.setDate(d.getDate() - 1);
@@ -19,7 +17,8 @@ function getYesterday() {
 }
 
 // Descarga datos de GSC para UN día específico
-async function fetchGSCData(auth, date, rowLimit = 25000) {
+// startDate = endDate = mismo día → GSC devuelve datos de ese día solamente
+async function fetchGSCDay(auth, date, rowLimit = 25000) {
   const sc = google.searchconsole({ version: 'v1', auth });
   const rows = [];
   let startRow = 0;
@@ -45,8 +44,6 @@ async function fetchGSCData(auth, date, rowLimit = 25000) {
 
     const data = res.data.rows || [];
     rows.push(...data);
-    console.log(`Fetched ${rows.length} rows (startRow: ${startRow})`);
-
     if (data.length < rowLimit) break;
     startRow += rowLimit;
   }
@@ -54,8 +51,15 @@ async function fetchGSCData(auth, date, rowLimit = 25000) {
   return rows;
 }
 
+function shouldExclude(page) {
+  return page.includes('/listas/') ||
+         page.includes('/search') ||
+         page.includes('.html');
+}
+
 async function saveToDatabase(pool, rows, date) {
   let inserted = 0;
+  let excluded = 0;
   const batchSize = 500;
 
   for (let i = 0; i < rows.length; i += batchSize) {
@@ -66,6 +70,12 @@ async function saveToDatabase(pool, rows, date) {
       await client.query('BEGIN');
       for (const row of batch) {
         const [query, page, device] = row.keys;
+
+        if (shouldExclude(page)) {
+          excluded++;
+          continue;
+        }
+
         await client.query(`
           INSERT INTO gsc_daily (date, query, page, clicks, impressions, ctr, position, device)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -84,10 +94,9 @@ async function saveToDatabase(pool, rows, date) {
     } finally {
       client.release();
     }
-
-    console.log(`Insertadas ${inserted} de ${rows.length} filas...`);
   }
 
+  console.log(`✅ ${date}: ${inserted} insertadas, ${excluded} excluidas`);
   return inserted;
 }
 
@@ -95,12 +104,8 @@ exports.handler = async (event) => {
   let pool;
 
   try {
-    // 1. Leer secretos
-    console.log('Leyendo credenciales...');
     const secret = await getSecret('gaprank/credentials');
 
-    // 2. Conexión RDS
-    console.log('Conectando a RDS...');
     pool = new Pool({
       host: process.env.DB_HOST,
       port: 5432,
@@ -109,11 +114,10 @@ exports.handler = async (event) => {
       password: secret.DB_PASSWORD,
       ssl: { rejectUnauthorized: false }
     });
+
     await pool.query('SELECT 1');
     console.log('RDS OK');
 
-    // 3. Autenticación GSC
-    console.log('Autenticando GSC...');
     const gscKey = typeof secret.GSC_CREDENTIALS === 'string'
       ? JSON.parse(secret.GSC_CREDENTIALS)
       : secret.GSC_CREDENTIALS;
@@ -123,26 +127,24 @@ exports.handler = async (event) => {
       scopes: ['https://www.googleapis.com/auth/webmasters.readonly']
     });
     const authClient = await auth.getClient();
-    console.log('GSC OK — cuenta:', gscKey.client_email);
+    console.log('GSC OK:', gscKey.client_email);
 
-    // 4. Fecha a descargar — ayer por defecto, o fecha específica si se pasa en el evento
+    // Un día por ejecución — ayer, o fecha manual si se pasa en el evento
     const date = event.date || getYesterday();
-    console.log(`Descargando datos de /tecnologia/ para: ${date}`);
+    console.log(`Descargando /tecnologia/ para: ${date}`);
 
-    // 5. Descargar datos del día
-    const rows = await fetchGSCData(authClient, date);
-    console.log(`Total filas: ${rows.length}`);
+    const rows = await fetchGSCDay(authClient, date);
+    console.log(`Filas descargadas: ${rows.length}`);
 
     if (rows.length === 0) {
       return { statusCode: 200, body: `Sin datos para ${date}` };
     }
 
-    // 6. Guardar en BD
     const inserted = await saveToDatabase(pool, rows, date);
 
     return {
       statusCode: 200,
-      body: `OK: ${inserted} filas insertadas para ${date}`
+      body: `OK: ${inserted} filas para ${date}`
     };
 
   } catch (err) {

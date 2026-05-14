@@ -8,7 +8,7 @@ Diego Pablo Hidalgo Alvear · Analista Programador · DUOC UC · 2026
 
 Antes de comenzar, asegúrate de tener instalado:
 
-- [Node.js 20+](https://nodejs.org/) — verificar con `node --version`
+- [Node.js 24](https://nodejs.org/) — verificar con `node --version`
 - [AWS CLI](https://aws.amazon.com/cli/) — verificar con `aws --version`
 - [Git](https://git-scm.com/) — verificar con `git --version`
 - Acceso a la cuenta AWS de Cencosud SEO (us-east-2)

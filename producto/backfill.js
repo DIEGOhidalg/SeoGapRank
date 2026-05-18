@@ -11,14 +11,36 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+// Genera rango de fechas consolidadas (hasta hoy-4 para evitar fresh data en ejecución manual)
 function getDatesRange(daysBack) {
   const dates = [];
-  for (let i = daysBack; i >= 2; i--) {
+  for (let i = daysBack; i >= 4; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     dates.push(d.toISOString().split('T')[0]);
   }
   return dates;
+}
+
+// --- Filtro Branded ---
+const BRANDED_TERMS = [
+  'paris', 'pars', 'paeis', 'paaris', 'pariw', 'parus', 'parid',
+  'patis', 'paros', 'paria', 'parís', 'cenco', 'almacen', 'almacenes'
+];
+const brandedRegex = new RegExp(BRANDED_TERMS.join('|'), 'i');
+const brandedBoundary = /\baris\b/i;
+
+function isBranded(query) {
+  return brandedRegex.test(query) || brandedBoundary.test(query);
+}
+
+function shouldExclude(page, position, query) {
+  if (page.includes('/listas/')) return true;
+  if (page.includes('/search')) return true;
+  if (page.includes('.html')) return true;
+  if (position > 20) return true;
+  if (isBranded(query)) return true;   // Excluir términos branded
+  return false;
 }
 
 async function fetchGSCDay(auth, date) {
@@ -55,14 +77,6 @@ async function fetchGSCDay(auth, date) {
   return rows;
 }
 
-function shouldExclude(page, position) {
-  if (page.includes('/listas/')) return true;
-  if (page.includes('/search')) return true;
-  if (page.includes('.html')) return true;
-  if (position > 20) return true;
-  return false;
-}
-
 async function saveDay(rows, date) {
   let inserted = 0;
   let excluded = 0;
@@ -76,7 +90,7 @@ async function saveDay(rows, date) {
       for (const row of batch) {
         const [query, page] = row.keys;
 
-        if (shouldExclude(page, row.position)) {
+        if (shouldExclude(page, row.position, query)) {
           excluded++;
           continue;
         }
@@ -101,7 +115,7 @@ async function saveDay(rows, date) {
     }
   }
 
-  console.log(`  ✅ ${date}: ${inserted} insertadas, ${excluded} excluidas`);
+  console.log(`  ✅ ${date}: ${inserted} insertadas, ${excluded} excluidas (página + branded)`);
   return inserted;
 }
 

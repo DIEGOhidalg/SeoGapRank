@@ -10,10 +10,23 @@ async function getSecret(secretId) {
   return JSON.parse(res.SecretString);
 }
 
-function getYesterday() {
+// Retorna fecha consolidada (hoy - 3 días) para evitar fresh data
+function getConsolidatedDate() {
   const d = new Date();
-  d.setDate(d.getDate() - 1);
+  d.setDate(d.getDate() - 3);
   return d.toISOString().split('T')[0];
+}
+
+// --- Filtro Branded ---
+const BRANDED_TERMS = [
+  'paris', 'pars', 'paeis', 'paaris', 'pariw', 'parus', 'parid',
+  'patis', 'paros', 'paria', 'parís', 'cenco', 'almacen', 'almacenes'
+];
+const brandedRegex = new RegExp(BRANDED_TERMS.join('|'), 'i');
+const brandedBoundary = /\baris\b/i;
+
+function isBranded(query) {
+  return brandedRegex.test(query) || brandedBoundary.test(query);
 }
 
 async function fetchGSCDay(auth, date) {
@@ -50,11 +63,12 @@ async function fetchGSCDay(auth, date) {
   return rows;
 }
 
-function shouldExclude(page, position) {
+function shouldExclude(page, position, query) {
   if (page.includes('/listas/')) return true;
   if (page.includes('/search')) return true;
   if (page.includes('.html')) return true;
   if (position > 20) return true;
+  if (isBranded(query)) return true;   // Excluir términos branded
   return false;
 }
 
@@ -72,7 +86,7 @@ async function saveToDatabase(pool, rows, date) {
       for (const row of batch) {
         const [query, page] = row.keys;
 
-        if (shouldExclude(page, row.position)) {
+        if (shouldExclude(page, row.position, query)) {
           excluded++;
           continue;
         }
@@ -97,7 +111,7 @@ async function saveToDatabase(pool, rows, date) {
     }
   }
 
-  console.log(`✅ ${date}: ${inserted} insertadas, ${excluded} excluidas`);
+  console.log(`✅ ${date}: ${inserted} insertadas, ${excluded} excluidas (página + branded)`);
   return inserted;
 }
 
@@ -130,7 +144,8 @@ exports.handler = async (event) => {
     const authClient = await auth.getClient();
     console.log('GSC OK:', gscKey.client_email);
 
-    const date = event.date || getYesterday();
+    // Sin argumento en event.date usa fecha consolidada (hoy - 3 días)
+    const date = event.date || getConsolidatedDate();
     console.log(`Descargando /tecnologia/ para: ${date}`);
 
     const rows = await fetchGSCDay(authClient, date);

@@ -30,11 +30,23 @@ async function getAuthClient() {
   return auth.getClient();
 }
 
-// Retorna fecha de ayer en formato YYYY-MM-DD
-function getYesterday() {
+// Retorna fecha consolidada (hoy - 3 días) para evitar fresh data
+function getConsolidatedDate() {
   const d = new Date();
-  d.setDate(d.getDate() - 1);
+  d.setDate(d.getDate() - 3);
   return d.toISOString().split('T')[0];
+}
+
+// --- Filtro Branded ---
+const BRANDED_TERMS = [
+  'paris', 'pars', 'paeis', 'paaris', 'pariw', 'parus', 'parid',
+  'patis', 'paros', 'paria', 'parís', 'cenco', 'almacen', 'almacenes'
+];
+const brandedRegex = new RegExp(BRANDED_TERMS.join('|'), 'i');
+const brandedBoundary = /\baris\b/i;
+
+function isBranded(query) {
+  return brandedRegex.test(query) || brandedBoundary.test(query);
 }
 
 // Descarga datos de GSC para UN día específico
@@ -75,6 +87,7 @@ async function fetchGSCData(auth, date, rowLimit = 25000) {
 
 async function saveToDatabase(rows, date) {
   let inserted = 0;
+  let excluded = 0;
   const batchSize = 500;
 
   for (let i = 0; i < rows.length; i += batchSize) {
@@ -85,6 +98,13 @@ async function saveToDatabase(rows, date) {
       await client.query('BEGIN');
       for (const row of batch) {
         const [query, page, device] = row.keys;
+
+        // Excluir términos branded — no se insertan en BD
+        if (isBranded(query)) {
+          excluded++;
+          continue;
+        }
+
         await client.query(`
           INSERT INTO gsc_daily (date, query, page, clicks, impressions, ctr, position, device)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -107,13 +127,14 @@ async function saveToDatabase(rows, date) {
     console.log(`  💾 Insertadas ${inserted} de ${rows.length} filas...`);
   }
 
-  console.log(`✅ Insertadas ${inserted} filas para ${date}`);
+  console.log(`✅ Insertadas ${inserted} filas para ${date} | 🚫 Branded excluidas: ${excluded}`);
   return inserted;
 }
 
 async function runIngestion() {
   // Acepta fecha como argumento: node ingest.js 2026-05-01
-  const date = process.argv[2] || getYesterday();
+  // Sin argumento usa fecha consolidada (hoy - 3 días)
+  const date = process.argv[2] || getConsolidatedDate();
   console.log(`🚀 Iniciando ingesta GSC — Fecha: ${date} — Filtro: /tecnologia/`);
 
   try {

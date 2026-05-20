@@ -61,7 +61,7 @@ async function fetchGSCData(auth, date, rowLimit = 25000) {
       requestBody: {
         startDate: date,
         endDate: date,
-        dimensions: ['query', 'page', 'device'],
+        dimensions: ['query', 'page'],
         rowLimit,
         startRow,
         dimensionFilterGroups: [{
@@ -97,7 +97,7 @@ async function saveToDatabase(rows, date) {
     try {
       await client.query('BEGIN');
       for (const row of batch) {
-        const [query, page, device] = row.keys;
+        const [query, page] = row.keys;
 
         // Excluir términos branded — no se insertan en BD
         if (isBranded(query)) {
@@ -106,9 +106,9 @@ async function saveToDatabase(rows, date) {
         }
 
         await client.query(`
-          INSERT INTO gsc_daily (date, query, page, clicks, impressions, ctr, position, device)
+          INSERT INTO gsc_daily (date, query, page, clicks, impressions, ctr, position)
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          ON CONFLICT (date, query, page, device) DO UPDATE SET
+          ON CONFLICT (date, query, page) DO UPDATE SET
             clicks = EXCLUDED.clicks,
             impressions = EXCLUDED.impressions,
             ctr = EXCLUDED.ctr,

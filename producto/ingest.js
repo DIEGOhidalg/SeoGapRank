@@ -107,13 +107,13 @@ async function saveToDatabase(rows, date) {
 
         await client.query(`
           INSERT INTO gsc_daily (date, query, page, clicks, impressions, ctr, position)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
           ON CONFLICT (date, query, page) DO UPDATE SET
             clicks = EXCLUDED.clicks,
             impressions = EXCLUDED.impressions,
             ctr = EXCLUDED.ctr,
             position = EXCLUDED.position
-        `, [date, query, page, row.clicks, row.impressions, row.ctr, row.position, device]);
+        `, [date, query, page, row.clicks, row.impressions, row.ctr, row.position]);
         inserted++;
       }
       await client.query('COMMIT');
@@ -164,3 +164,22 @@ async function runIngestion() {
 }
 
 runIngestion();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

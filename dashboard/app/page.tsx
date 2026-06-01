@@ -7,6 +7,7 @@ import Top5List from '@/components/Top5List';
 import DistributionChart from '@/components/DistributionChart';
 import RevenueBarChart from '@/components/RevenueBarChart';
 import OpportunitiesTable from '@/components/OpportunitiesTable';
+import { useIsMobile } from '@/lib/useIsMobile';
 
 interface KPIData {
   date: string;
@@ -39,6 +40,7 @@ interface OppResponse {
 }
 
 export default function Home() {
+  const isMobile = useIsMobile();
   const [view, setView] = useState<'gerencia' | 'seo'>('gerencia');
   const [chartReady, setChartReady] = useState(false);
   const [kpis, setKpis] = useState<KPIData | null>(null);
@@ -87,7 +89,7 @@ export default function Home() {
     background: '#ffffff',
     border: '0.5px solid rgba(0,0,0,0.08)',
     borderRadius: 16,
-    padding: '1.25rem',
+    padding: isMobile ? '1rem' : '1.25rem',
   };
 
   return (
@@ -97,64 +99,105 @@ export default function Home() {
         onLoad={() => setChartReady(true)}
       />
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '2rem 1rem' }}>
+      <div style={{
+        maxWidth: 1100,
+        margin: '0 auto',
+        padding: isMobile ? '1rem 0.75rem' : '2rem 1rem',
+      }}>
 
-        {/* Top bar */}
+        {/* ── Top bar ── */}
         <div style={{
-          display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', marginBottom: '2rem',
+          display: 'flex',
+          alignItems: isMobile ? 'flex-start' : 'center',
+          flexDirection: isMobile ? 'column' : 'row',
+          justifyContent: 'space-between',
+          gap: isMobile ? 12 : 0,
+          marginBottom: isMobile ? '1.25rem' : '2rem',
         }}>
+          {/* Logo / título */}
           <div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: '#1d1d1f', letterSpacing: '-0.02em' }}>
+            <div style={{
+              fontSize: isMobile ? 18 : 22,
+              fontWeight: 600,
+              color: '#1d1d1f',
+              letterSpacing: '-0.02em',
+            }}>
               GAPRANK v2.0
             </div>
             <div style={{ fontSize: 13, color: '#6e6e73', marginTop: 2 }}>
               paris.cl / tecnología
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+          {/* Controles: fecha + toggle */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            width: isMobile ? '100%' : 'auto',
+            justifyContent: isMobile ? 'space-between' : 'flex-end',
+          }}>
             {kpis?.date && (
               <span style={{
-                fontSize: 12, color: '#6e6e73',
+                fontSize: 12,
+                color: '#6e6e73',
                 background: '#ffffff',
                 border: '0.5px solid rgba(0,0,0,0.08)',
-                padding: '5px 12px', borderRadius: 8,
+                padding: '5px 12px',
+                borderRadius: 8,
+                whiteSpace: 'nowrap',
               }}>
                 {new Date(kpis.date).toLocaleDateString('es-CL', {
-                  day: '2-digit', month: 'long', year: 'numeric'
+                  day: '2-digit',
+                  month: isMobile ? 'short' : 'long',
+                  year: 'numeric',
                 })}
               </span>
             )}
+
+            {/* Toggle Gerencia / Equipo SEO */}
             <div style={{
               display: 'flex',
               background: '#ffffff',
               border: '0.5px solid rgba(0,0,0,0.08)',
-              borderRadius: 10, padding: 3, gap: 2,
+              borderRadius: 10,
+              padding: 3,
+              gap: 2,
             }}>
               {(['gerencia', 'seo'] as const).map(v => (
                 <button key={v} onClick={() => setView(v)} style={{
-                  padding: '6px 16px', fontSize: 13,
-                  border: 'none', cursor: 'pointer',
-                  borderRadius: 8, transition: 'all 0.2s',
+                  padding: isMobile ? '6px 12px' : '6px 16px',
+                  fontSize: isMobile ? 12 : 13,
+                  border: 'none',
+                  cursor: 'pointer',
+                  borderRadius: 8,
+                  transition: 'all 0.2s',
                   background: view === v ? '#0071e3' : 'transparent',
                   color: view === v ? '#ffffff' : '#6e6e73',
                   fontWeight: view === v ? 500 : 400,
                   letterSpacing: '-0.01em',
+                  whiteSpace: 'nowrap',
                 }}>
-                  {v === 'gerencia' ? 'Gerencia' : 'Equipo SEO'}
+                  {v === 'gerencia' ? 'Gerencia' : 'SEO'}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        {/* KPIs */}
+        {/* ── KPIs ── */}
         {kpis && <KPICards data={kpis} />}
 
-        {/* Vista Gerencia */}
+        {/* ── Vista Gerencia ── */}
         {view === 'gerencia' && opps && kpis && (
           <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            {/* Grid Top5 + Donut: 2 col desktop, 1 col mobile */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+              gap: 16,
+              marginBottom: 16,
+            }}>
               <div style={card}>
                 <div style={{
                   fontSize: 13, fontWeight: 500,
@@ -176,6 +219,8 @@ export default function Home() {
                 {chartReady && <DistributionChart data={kpis.distribution} />}
               </div>
             </div>
+
+            {/* Bar chart — full width */}
             <div style={card}>
               <div style={{
                 fontSize: 13, fontWeight: 500,
@@ -189,7 +234,7 @@ export default function Home() {
           </>
         )}
 
-        {/* Vista SEO */}
+        {/* ── Vista SEO ── */}
         {view === 'seo' && (
           <div style={{ position: 'relative' }}>
             {loading && (
@@ -222,10 +267,12 @@ export default function Home() {
           </div>
         )}
 
-        {/* Footer */}
+        {/* ── Footer ── */}
         <div style={{
-          marginTop: '2rem', textAlign: 'center',
-          fontSize: 11, color: '#aeaeb2',
+          marginTop: '2rem',
+          textAlign: 'center',
+          fontSize: 11,
+          color: '#aeaeb2',
           letterSpacing: '0.02em',
         }}>
           GAPRANK v2.0 · Paris.cl · Pipeline automático 6 AM

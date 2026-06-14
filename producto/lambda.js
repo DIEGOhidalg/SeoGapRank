@@ -175,22 +175,17 @@ exports.handler = async (event) => {
     `, [date]);
     console.log(`keyword_gaps OK: ${kgResult.rowCount} filas insertadas`);
 
-    // F2-02b: calcular CTR gap y delta_clicks del día
+    // F2-02: CTR gap + clasificación + delta_clicks (la clasificación corre DENTRO de este proc)
     console.log(`Ejecutando scoring F2-02 para ${date}...`);
     await pool.query('CALL calculate_ctr_gap_and_delta_clicks($1)', [date]);
-    console.log('F2-02 OK: CTR gap y delta_clicks calculados');
+    console.log('F2-02 OK: ctr_gap, agency_factor y delta_clicks calculados');
 
-    // F2-03: calcular revenue incremental en CLP
+    // F2-03: revenue incremental en CLP
     console.log(`Ejecutando F2-03 revenue para ${date}...`);
     await pool.query('CALL calculate_revenue($1)', [date]);
     console.log('F2-03 OK: revenue_final calculado');
 
-    // F2-05: clasificar agency_factor automáticamente
-    console.log(`Ejecutando F2-05 classify_agency_factor para ${date}...`);
-    await pool.query('CALL classify_agency_factor($1)', [date]);
-    console.log('F2-05 OK: agency_factor clasificado');
-
-    // F2-04: calcular opportunity_score normalizado 0-100
+    // F2-04: opportunity_score normalizado 0-100
     console.log(`Ejecutando F2-04 opportunity_score para ${date}...`);
     await pool.query('CALL calculate_opportunity_score($1)', [date]);
     console.log('F2-04 OK: opportunity_score calculado');

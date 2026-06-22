@@ -3,10 +3,11 @@ import pool from '@/lib/db';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const date        = searchParams.get('date')   || '';
-  const factor      = searchParams.get('factor') || '';
-  const maxPos      = searchParams.get('maxPos') || '';
-  const minRevenue  = searchParams.get('minRevenue') || '0';
+  const date        = searchParams.get('date')        || '';
+  const factor      = searchParams.get('factor')      || '';
+  const maxPos      = searchParams.get('maxPos')      || '';
+  const minRevenue  = searchParams.get('minRevenue')  || '0';
+  const subcategory = searchParams.get('subcategory') || '';
   const sortKey     = searchParams.get('sortKey') || 'opportunity_score';
   const sortDir     = searchParams.get('sortDir') || 'DESC';
   const page        = parseInt(searchParams.get('page') || '1');
@@ -33,6 +34,10 @@ export async function GET(request: Request) {
     if (factor) conditions.push(`agency_factor = '${factor}'`);
     if (maxPos)  conditions.push(`avg_position <= ${parseFloat(maxPos)}`);
     if (minRevenue && minRevenue !== '0') conditions.push(`revenue_final >= ${parseInt(minRevenue)}`);
+    if (subcategory) {
+      const safeSub = subcategory.replace(/'/g, "''");
+      conditions.push(`COALESCE(NULLIF(split_part(split_part(page_url, '.cl/', 2), '/', 2), ''), '(sin subcategoría)') = '${safeSub}'`);
+    }
 
     const where = `WHERE ${conditions.join(' AND ')}`;
 
@@ -48,7 +53,9 @@ export async function GET(request: Request) {
           ROUND(ctr_expected * 100, 2)  AS ctr_expected,
           revenue_final,
           agency_factor,
-          ROUND(opportunity_score, 1)   AS opportunity_score
+          ROUND(opportunity_score, 1)   AS opportunity_score,
+          COALESCE(conversion_rate, 0)::float AS conversion_rate,
+          COALESCE(avg_ticket, 0)::integer    AS avg_ticket
         FROM keyword_gaps
         ${where}
           AND delta_clicks > 0
